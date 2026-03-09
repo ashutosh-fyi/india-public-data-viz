@@ -3,198 +3,544 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>India LPG Customers — Choropleth Map</title>
+  <title>India's LPG Vulnerability — Strait of Hormuz Crisis Dashboard</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: #1a1a2e; color: #e0e0e0; }
-    #map { width: 100%; height: calc(100vh - 60px); }
-    header {
-      height: 60px; display: flex; align-items: center; justify-content: center;
-      background: #16213e; border-bottom: 2px solid #0f3460;
-    }
-    header h1 { font-size: 1.2rem; font-weight: 600; color: #e0e0e0; letter-spacing: 0.3px; }
-    header h1 span { color: #f6a623; }
+    body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: #0f0f1a; color: #e0e0e0; overflow-x: hidden; }
 
-    .info-panel {
-      padding: 10px 14px; background: rgba(22, 33, 62, 0.95); border-radius: 8px;
-      box-shadow: 0 2px 12px rgba(0,0,0,0.4); color: #e0e0e0; min-width: 200px;
-      backdrop-filter: blur(4px); border: 1px solid #0f3460;
+    /* ── Layout ─────────────────────────────────────────────────── */
+    header {
+      height: 56px; display: flex; align-items: center; justify-content: center;
+      background: #16213e; border-bottom: 2px solid #e53e3e; position: relative; z-index: 10;
     }
-    .info-panel h4 { margin: 0 0 6px; font-size: 0.85rem; color: #999; text-transform: uppercase; letter-spacing: 0.5px; }
-    .info-panel .state-name { font-size: 1.1rem; font-weight: 700; color: #fff; }
-    .info-panel .value { font-size: 1.4rem; font-weight: 700; color: #f6a623; margin: 4px 0; }
-    .info-panel .subtitle { font-size: 0.75rem; color: #888; }
-    .info-panel.empty .state-name { font-weight: 400; color: #aaa; font-size: 0.9rem; }
+    header h1 { font-size: 1.05rem; font-weight: 600; color: #e0e0e0; letter-spacing: 0.3px; text-align: center; padding: 0 16px; }
+    header h1 .accent { color: #f6a623; }
+    header h1 .crisis { color: #e53e3e; }
+
+    .dashboard { display: grid; grid-template-columns: 1fr 380px; grid-template-rows: auto 1fr; height: calc(100vh - 56px); }
+    .stat-bar {
+      grid-column: 1 / -1; display: flex; gap: 0; background: #121a2e;
+      border-bottom: 1px solid #1e2d4a; overflow-x: auto;
+    }
+    .stat-card {
+      flex: 1; min-width: 160px; padding: 12px 18px; border-right: 1px solid #1e2d4a;
+      display: flex; flex-direction: column; justify-content: center;
+    }
+    .stat-card:last-child { border-right: none; }
+    .stat-card .label { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.8px; color: #667; margin-bottom: 4px; }
+    .stat-card .number { font-size: 1.5rem; font-weight: 800; line-height: 1.1; }
+    .stat-card .sub { font-size: 0.7rem; color: #888; margin-top: 2px; }
+    .stat-card.alert .number { color: #e53e3e; }
+    .stat-card.warn .number { color: #f6a623; }
+    .stat-card.info .number { color: #4da6ff; }
+    .stat-card.ok .number { color: #48bb78; }
+
+    #map { grid-column: 1; grid-row: 2; min-height: 0; }
+    .sidebar {
+      grid-column: 2; grid-row: 2; background: #111827; border-left: 1px solid #1e2d4a;
+      overflow-y: auto; display: flex; flex-direction: column; gap: 0;
+    }
+
+    /* ── Sidebar panels ────────────────────────────────────────── */
+    .panel { padding: 18px; border-bottom: 1px solid #1e2d4a; }
+    .panel h3 { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 1px; color: #667; margin-bottom: 12px; }
+    .panel h3 .live { color: #e53e3e; font-weight: 700; animation: pulse 2s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+    /* Brent chart */
+    .chart-container { position: relative; }
+    #brent-chart { width: 100%; height: 160px; }
+    .chart-label { position: absolute; font-size: 0.65rem; color: #888; pointer-events: none; }
+    .chart-price { position: absolute; right: 4px; font-size: 0.85rem; font-weight: 700; }
+
+    /* Import donut */
+    #import-donut { width: 100%; max-width: 200px; margin: 0 auto; display: block; }
+    .import-legend { margin-top: 10px; }
+    .import-legend .row { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: 0.78rem; }
+    .import-legend .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    .import-legend .pct { margin-left: auto; font-weight: 700; color: #ccc; }
+    .hormuz-tag { background: #e53e3e22; color: #e53e3e; font-size: 0.6rem; padding: 1px 5px; border-radius: 3px; font-weight: 600; }
+
+    /* Map controls */
+    .info-panel {
+      padding: 10px 14px; background: rgba(17, 24, 39, 0.95); border-radius: 8px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.5); color: #e0e0e0; min-width: 220px;
+      backdrop-filter: blur(4px); border: 1px solid #1e2d4a;
+    }
+    .info-panel h4 { margin: 0 0 6px; font-size: 0.7rem; color: #667; text-transform: uppercase; letter-spacing: 0.5px; }
+    .info-panel .state-name { font-size: 1.05rem; font-weight: 700; color: #fff; }
+    .info-panel .value { font-size: 1.3rem; font-weight: 700; color: #f6a623; margin: 3px 0; }
+    .info-panel .detail-row { font-size: 0.78rem; color: #aaa; padding: 2px 0; }
+    .info-panel .detail-row strong { color: #e0e0e0; }
+    .info-panel .ujjwala-bar { height: 6px; background: #1e2d4a; border-radius: 3px; margin-top: 6px; overflow: hidden; }
+    .info-panel .ujjwala-bar-fill { height: 100%; background: #e53e3e; border-radius: 3px; }
+    .info-panel.empty .state-name { font-weight: 400; color: #888; font-size: 0.85rem; }
 
     .legend {
-      padding: 10px 14px; background: rgba(22, 33, 62, 0.95); border-radius: 8px;
-      box-shadow: 0 2px 12px rgba(0,0,0,0.4); border: 1px solid #0f3460;
-      line-height: 1.6; color: #ccc; font-size: 0.8rem;
+      padding: 10px 14px; background: rgba(17, 24, 39, 0.95); border-radius: 8px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.5); border: 1px solid #1e2d4a;
+      line-height: 1.6; color: #ccc; font-size: 0.75rem;
     }
-    .legend h4 { margin: 0 0 8px; font-size: 0.75rem; color: #999; text-transform: uppercase; letter-spacing: 0.5px; }
+    .legend h4 { margin: 0 0 6px; font-size: 0.65rem; color: #667; text-transform: uppercase; letter-spacing: 0.5px; }
     .legend i {
-      width: 20px; height: 14px; display: inline-block; margin-right: 6px;
-      border-radius: 2px; vertical-align: middle; border: 1px solid rgba(255,255,255,0.15);
+      width: 18px; height: 12px; display: inline-block; margin-right: 5px;
+      border-radius: 2px; vertical-align: middle; border: 1px solid rgba(255,255,255,0.1);
+    }
+
+    .map-toggle {
+      padding: 8px 12px; background: rgba(17, 24, 39, 0.95); border-radius: 8px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.5); border: 1px solid #1e2d4a; font-size: 0.78rem;
+    }
+    .map-toggle label { cursor: pointer; display: flex; align-items: center; gap: 6px; color: #ccc; }
+    .map-toggle input { accent-color: #e53e3e; }
+
+    /* Context bar */
+    .context-bar {
+      padding: 14px 18px; background: #1a1020; border-bottom: 1px solid #2d1a3e;
+    }
+    .context-bar p { font-size: 0.78rem; color: #bbb; line-height: 1.55; }
+    .context-bar p strong { color: #e53e3e; }
+    .context-bar .source { font-size: 0.65rem; color: #666; margin-top: 8px; }
+    .context-bar .source a { color: #4da6ff; text-decoration: none; }
+
+    /* Responsive */
+    @media (max-width: 900px) {
+      .dashboard { grid-template-columns: 1fr; grid-template-rows: auto 50vh auto; }
+      .sidebar { grid-column: 1; grid-row: 3; border-left: none; border-top: 1px solid #1e2d4a; }
     }
   </style>
 </head>
 <body>
   <header>
-    <h1>State-wise Active Domestic <span>LPG</span> Customers in India &mdash; 1 Apr 2025</h1>
+    <h1>India's <span class="accent">LPG</span> Vulnerability &mdash; <span class="crisis">Strait of Hormuz Crisis</span> Dashboard</h1>
   </header>
-  <div id="map"></div>
+
+  <div class="dashboard">
+    <!-- ── Stat bar ──────────────────────────────────────────── -->
+    <div class="stat-bar">
+      <div class="stat-card info">
+        <div class="label">Active LPG Connections</div>
+        <div class="number">329.7M</div>
+        <div class="sub">~3,297 lakh households</div>
+      </div>
+      <div class="stat-card warn">
+        <div class="label">Import Dependency</div>
+        <div class="number">67%</div>
+        <div class="sub">~23.3 MT imported (FY25)</div>
+      </div>
+      <div class="stat-card alert">
+        <div class="label">Via Strait of Hormuz</div>
+        <div class="number">85–90%</div>
+        <div class="sub">of all LPG imports</div>
+      </div>
+      <div class="stat-card alert">
+        <div class="label">LPG Buffer Stock</div>
+        <div class="number">~10 days</div>
+        <div class="sub">1 MT vs 3 MT/month demand</div>
+      </div>
+      <div class="stat-card warn">
+        <div class="label">Ujjwala (Poorest)</div>
+        <div class="number">103.3M</div>
+        <div class="sub">31% of all connections</div>
+      </div>
+      <div class="stat-card alert">
+        <div class="label">Brent Crude</div>
+        <div class="number" id="brent-live">$88.03</div>
+        <div class="sub">+23% since Feb 28</div>
+      </div>
+    </div>
+
+    <!-- ── Map ───────────────────────────────────────────────── -->
+    <div id="map"></div>
+
+    <!-- ── Sidebar ───────────────────────────────────────────── -->
+    <div class="sidebar">
+      <!-- Brent price chart -->
+      <div class="panel">
+        <h3>Brent Crude Oil Price <span class="live">LIVE</span></h3>
+        <div class="chart-container">
+          <canvas id="brent-chart"></canvas>
+        </div>
+      </div>
+
+      <!-- Import source donut -->
+      <div class="panel">
+        <h3>LPG Import Sources (2023)</h3>
+        <canvas id="import-donut" width="200" height="200"></canvas>
+        <div class="import-legend" id="import-legend"></div>
+      </div>
+
+      <!-- Context -->
+      <div class="context-bar">
+        <p>
+          On <strong>Feb 28, 2026</strong>, the US and Israel launched strikes on Iran.
+          Iran's IRGC blockaded the Strait of Hormuz — through which <strong>85–90%</strong> of India's LPG imports flow.
+          India has <strong>~10 days</strong> of LPG buffer. The blockade is now on <strong id="day-count">Day 11</strong>.
+          Brent surged from $71 to a peak of $119.50. The government has ordered refiners to maximise LPG output,
+          raised the rebooking gap to 25 days, and some cities have shut gas crematoriums.
+        </p>
+        <div class="source">
+          Data: <a href="https://ppac.gov.in/" target="_blank">PPAC</a> |
+          <a href="https://fred.stlouisfed.org/series/DCOILBRENTEU" target="_blank">FRED</a> |
+          <a href="https://wits.worldbank.org/" target="_blank">World Bank WITS</a> |
+          Triggered by <a href="https://x.com/PetroleumMin/status/2031058085952000251" target="_blank">@PetroleumMin tweet</a>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
-    // ── LPG data (lakhs) from PPAC spreadsheet ───────────────────────────
+    // ── Day count since blockade ──────────────────────────────────────────
+    const blockadeStart = new Date("2026-02-28");
+    const today = new Date();
+    const dayCount = Math.floor((today - blockadeStart) / 86400000) + 1;
+    document.getElementById("day-count").textContent = "Day " + dayCount;
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // DATA
+    // ═══════════════════════════════════════════════════════════════════════
+
+    // ── LPG data (lakhs) ─────────────────────────────────────────────────
     const lpgData = {
-      "Andaman & Nicobar Island": 1.29,
-      "Andhra Pradesh": 159.52,
-      "Arunachal Pradesh": 3.33,
-      "Assam": 91.79,
-      "Bihar": 229.38,
-      "Chandigarh": 3.07,
-      "Chhattisgarh": 63.28,
-      "Dadara & Nagar Havelli": 0.86,
-      "Daman & Diu": 0.86,
-      "NCT of Delhi": 56.90,
-      "Goa": 5.80,
-      "Gujarat": 127.78,
-      "Haryana": 82.60,
-      "Himachal Pradesh": 22.44,
-      "Jammu & Kashmir": 35.42,
-      "Jharkhand": 66.23,
-      "Karnataka": 188.55,
-      "Kerala": 98.13,
-      "Ladakh": 1.00,
-      "Lakshadweep": 0.14,
-      "Madhya Pradesh": 175.04,
-      "Maharashtra": 317.12,
-      "Manipur": 7.05,
-      "Meghalaya": 5.23,
-      "Mizoram": 3.66,
-      "Nagaland": 3.86,
-      "Odisha": 100.56,
-      "Puducherry": 4.12,
-      "Punjab": 96.35,
-      "Rajasthan": 183.81,
-      "Sikkim": 1.89,
-      "Tamil Nadu": 237.57,
-      "Telangana": 126.92,
-      "Tripura": 8.46,
-      "Uttar Pradesh": 483.43,
-      "Uttarakhand": 32.27,
-      "West Bengal": 271.28
+      "Andaman & Nicobar Island": 1.29, "Andhra Pradesh": 159.52,
+      "Arunachal Pradesh": 3.33, "Assam": 91.79, "Bihar": 229.38,
+      "Chandigarh": 3.07, "Chhattisgarh": 63.28,
+      "Dadara & Nagar Havelli": 0.86, "Daman & Diu": 0.86,
+      "NCT of Delhi": 56.90, "Goa": 5.80, "Gujarat": 127.78,
+      "Haryana": 82.60, "Himachal Pradesh": 22.44,
+      "Jammu & Kashmir": 35.42, "Jharkhand": 66.23,
+      "Karnataka": 188.55, "Kerala": 98.13, "Ladakh": 1.00,
+      "Lakshadweep": 0.14, "Madhya Pradesh": 175.04,
+      "Maharashtra": 317.12, "Manipur": 7.05, "Meghalaya": 5.23,
+      "Mizoram": 3.66, "Nagaland": 3.86, "Odisha": 100.56,
+      "Puducherry": 4.12, "Punjab": 96.35, "Rajasthan": 183.81,
+      "Sikkim": 1.89, "Tamil Nadu": 237.57, "Telangana": 126.92,
+      "Tripura": 8.46, "Uttar Pradesh": 483.43,
+      "Uttarakhand": 32.27, "West Bengal": 271.28
     };
 
-    // ── Color scale ──────────────────────────────────────────────────────
+    // ── PMUY (Ujjwala) connections ───────────────────────────────────────
+    const pmuyData = {
+      "Andaman & Nicobar Island": 13822, "Andhra Pradesh": 973213,
+      "Arunachal Pradesh": 53794, "Assam": 5097344, "Bihar": 11628502,
+      "Chandigarh": 2028, "Chhattisgarh": 3801362,
+      "Dadara & Nagar Havelli": 8896, "Daman & Diu": 8895,
+      "NCT of Delhi": 259579, "Goa": 1955, "Gujarat": 4308245,
+      "Haryana": 1115081, "Himachal Pradesh": 150692,
+      "Jammu & Kashmir": 1269651, "Jharkhand": 3894458,
+      "Karnataka": 4146532, "Kerala": 387759, "Ladakh": 11085,
+      "Lakshadweep": 370, "Madhya Pradesh": 8846577,
+      "Maharashtra": 5217287, "Manipur": 224916, "Meghalaya": 317155,
+      "Mizoram": 36006, "Nagaland": 122138, "Odisha": 5549146,
+      "Puducherry": 19389, "Punjab": 1359256, "Rajasthan": 7381006,
+      "Sikkim": 19872, "Tamil Nadu": 4099805, "Telangana": 1184171,
+      "Tripura": 316411, "Uttar Pradesh": 18593754,
+      "Uttarakhand": 530076, "West Bengal": 12374688
+    };
+
+    // ── LPG import sources (WITS 2023, HS 271112, USD thousands) ────────
+    const importSources = [
+      { country: "UAE", value: 1717226, hormuz: true, color: "#e53e3e" },
+      { country: "Qatar", value: 1603825, hormuz: true, color: "#c53030" },
+      { country: "Saudi Arabia", value: 1024557, hormuz: true, color: "#f56565" },
+      { country: "Kuwait", value: 1001153, hormuz: true, color: "#fc8181" },
+      { country: "USA", value: 89263, hormuz: false, color: "#4da6ff" },
+      { country: "Oman", value: 71234, hormuz: true, color: "#feb2b2" },
+      { country: "Iran", value: 62833, hormuz: true, color: "#fca5a5" },
+      { country: "Others", value: 66633, hormuz: false, color: "#4a5568" },
+    ];
+    const totalImport = importSources.reduce((s, d) => s + d.value, 0);
+
+    // ── Brent crude daily (FRED + news-sourced crisis data) ─────────────
+    const brentData = [];
+    const brentCSV = `DATE,PRICE
+2025-01-02,76.14
+2025-02-03,76.49
+2025-03-03,72.85
+2025-04-01,77.78
+2025-05-01,62.37
+2025-06-02,66.55
+2025-07-01,67.63
+2025-08-01,70.55
+2025-09-01,67.09
+2025-10-01,72.25
+2025-11-03,73.46
+2025-12-01,72.78
+2026-01-02,75.67
+2026-01-15,78.24
+2026-02-03,70.01
+2026-02-14,69.96
+2026-02-21,72.75
+2026-02-27,71.32
+2026-02-28,75.10
+2026-03-02,77.24
+2026-03-03,82.50
+2026-03-04,88.00
+2026-03-05,95.60
+2026-03-06,101.81
+2026-03-07,114.00
+2026-03-08,107.20
+2026-03-09,98.96
+2026-03-10,88.03`;
+
+    brentCSV.trim().split("\n").slice(1).forEach(line => {
+      const [d, p] = line.split(",");
+      if (p && p !== ".") brentData.push({ date: d, price: parseFloat(p) });
+    });
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // BRENT PRICE CHART (canvas)
+    // ═══════════════════════════════════════════════════════════════════════
+    function drawBrentChart() {
+      const canvas = document.getElementById("brent-chart");
+      const ctx = canvas.getContext("2d");
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+      ctx.scale(dpr, dpr);
+      const W = rect.width, H = rect.height;
+      const pad = { top: 20, right: 50, bottom: 25, left: 5 };
+
+      const prices = brentData.map(d => d.price);
+      const minP = Math.floor(Math.min(...prices) / 10) * 10 - 5;
+      const maxP = Math.ceil(Math.max(...prices) / 10) * 10 + 5;
+
+      const xScale = (i) => pad.left + (i / (brentData.length - 1)) * (W - pad.left - pad.right);
+      const yScale = (v) => pad.top + (1 - (v - minP) / (maxP - minP)) * (H - pad.top - pad.bottom);
+
+      // Crisis zone (from Feb 28 index)
+      const crisisIdx = brentData.findIndex(d => d.date >= "2026-02-28");
+      if (crisisIdx >= 0) {
+        ctx.fillStyle = "rgba(229, 62, 62, 0.08)";
+        ctx.fillRect(xScale(crisisIdx), pad.top, W - pad.right - xScale(crisisIdx), H - pad.top - pad.bottom);
+        ctx.fillStyle = "#e53e3e";
+        ctx.font = "600 9px system-ui";
+        ctx.fillText("CRISIS", xScale(crisisIdx) + 4, pad.top + 12);
+      }
+
+      // Grid lines
+      ctx.strokeStyle = "#1e2d4a";
+      ctx.lineWidth = 0.5;
+      for (let p = minP; p <= maxP; p += 20) {
+        const y = yScale(p);
+        ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(W - pad.right, y); ctx.stroke();
+        ctx.fillStyle = "#555"; ctx.font = "10px system-ui";
+        ctx.fillText("$" + p, W - pad.right + 4, y + 3);
+      }
+
+      // Price line
+      ctx.beginPath();
+      ctx.strokeStyle = "#4da6ff";
+      ctx.lineWidth = 1.5;
+      brentData.forEach((d, i) => {
+        const x = xScale(i), y = yScale(d.price);
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        // Switch color at crisis point
+        if (i === crisisIdx - 1) {
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.strokeStyle = "#e53e3e";
+          ctx.lineWidth = 2;
+          ctx.moveTo(x, y);
+        }
+      });
+      ctx.stroke();
+
+      // Peak annotation
+      const peakIdx = prices.indexOf(Math.max(...prices));
+      const peakX = xScale(peakIdx), peakY = yScale(prices[peakIdx]);
+      ctx.fillStyle = "#e53e3e";
+      ctx.beginPath(); ctx.arc(peakX, peakY, 4, 0, Math.PI * 2); ctx.fill();
+      ctx.font = "600 10px system-ui";
+      ctx.fillText("$" + prices[peakIdx], peakX - 20, peakY - 10);
+
+      // Current price annotation
+      const lastIdx = brentData.length - 1;
+      const lastX = xScale(lastIdx), lastY = yScale(prices[lastIdx]);
+      ctx.fillStyle = "#f6a623";
+      ctx.beginPath(); ctx.arc(lastX, lastY, 4, 0, Math.PI * 2); ctx.fill();
+      ctx.font = "600 10px system-ui";
+      ctx.fillText("$" + prices[lastIdx], lastX - 30, lastY + 16);
+
+      // X axis labels
+      ctx.fillStyle = "#555"; ctx.font = "9px system-ui";
+      const labelIdxs = [0, Math.floor(brentData.length * 0.25), Math.floor(brentData.length * 0.5), Math.floor(brentData.length * 0.75), lastIdx];
+      labelIdxs.forEach(i => {
+        const lbl = brentData[i].date.slice(0, 7);
+        ctx.fillText(lbl, xScale(i) - 18, H - 5);
+      });
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // IMPORT DONUT (canvas)
+    // ═══════════════════════════════════════════════════════════════════════
+    function drawImportDonut() {
+      const canvas = document.getElementById("import-donut");
+      const ctx = canvas.getContext("2d");
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = 200 * dpr; canvas.height = 200 * dpr;
+      ctx.scale(dpr, dpr);
+      const cx = 100, cy = 100, r = 80, inner = 50;
+      let startAngle = -Math.PI / 2;
+
+      importSources.forEach(src => {
+        const sliceAngle = (src.value / totalImport) * Math.PI * 2;
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, startAngle, startAngle + sliceAngle);
+        ctx.arc(cx, cy, inner, startAngle + sliceAngle, startAngle, true);
+        ctx.closePath();
+        ctx.fillStyle = src.color;
+        ctx.fill();
+        startAngle += sliceAngle;
+      });
+
+      // Center text
+      ctx.fillStyle = "#e53e3e";
+      ctx.font = "700 22px system-ui";
+      ctx.textAlign = "center";
+      const hormuzPct = Math.round(importSources.filter(s => s.hormuz).reduce((a, s) => a + s.value, 0) / totalImport * 100);
+      ctx.fillText(hormuzPct + "%", cx, cy - 2);
+      ctx.fillStyle = "#888";
+      ctx.font = "600 9px system-ui";
+      ctx.fillText("VIA HORMUZ", cx, cy + 14);
+
+      // Legend
+      const legendEl = document.getElementById("import-legend");
+      legendEl.innerHTML = importSources.map(src => {
+        const pct = (src.value / totalImport * 100).toFixed(1);
+        return `<div class="row">
+          <span class="dot" style="background:${src.color}"></span>
+          <span>${src.country} ${src.hormuz ? '<span class="hormuz-tag">HORMUZ</span>' : ''}</span>
+          <span class="pct">${pct}%</span>
+        </div>`;
+      }).join("");
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // MAP
+    // ═══════════════════════════════════════════════════════════════════════
+
     const grades = [0, 1, 5, 25, 50, 100, 200, 300, 500];
-    const colors = ["#ffffcc","#ffeda0","#fed976","#feb24c","#fd8d3c","#fc4e2a","#e31a1c","#bd0026","#800026"];
+    const colorsLPG = ["#ffffcc","#ffeda0","#fed976","#feb24c","#fd8d3c","#fc4e2a","#e31a1c","#bd0026","#800026"];
+    const colorsUjjwala = ["#f7f7f7","#e8e0ef","#d4b9da","#c994c7","#df65b0","#e7298a","#ce1256","#980043","#67001f"];
+    const gradesUjjwala = [0, 1, 5, 10, 25, 50, 75, 100, 150]; // lakhs
+
+    let showUjjwala = false;
 
     function getColor(v) {
-      if (v == null) return "#444";
-      for (let i = grades.length - 1; i >= 0; i--) {
-        if (v >= grades[i]) return colors[i];
+      const g = showUjjwala ? gradesUjjwala : grades;
+      const c = showUjjwala ? colorsUjjwala : colorsLPG;
+      if (v == null) return "#333";
+      for (let i = g.length - 1; i >= 0; i--) {
+        if (v >= g[i]) return c[i];
       }
-      return colors[0];
+      return c[0];
+    }
+
+    function getValue(name) {
+      if (showUjjwala) {
+        const v = pmuyData[name];
+        return v != null ? v / 100000 : null; // convert to lakhs
+      }
+      return lpgData[name];
     }
 
     function style(feature) {
-      const v = lpgData[feature.properties.ST_NM];
       return {
-        fillColor: getColor(v),
-        weight: 1.2,
-        color: "#222",
-        fillOpacity: 0.85
+        fillColor: getColor(getValue(feature.properties.ST_NM)),
+        weight: 1, color: "#222", fillOpacity: 0.85
       };
     }
 
-    // ── Map ──────────────────────────────────────────────────────────────
-    const map = L.map("map", {
-      center: [22.5, 82],
-      zoom: 5,
-      minZoom: 4,
-      maxZoom: 8,
-      zoomControl: true,
-      attributionControl: true
-    });
-
-    // Dark tile layer
+    const map = L.map("map", { center: [22.5, 82], zoom: 5, minZoom: 4, maxZoom: 8, zoomControl: true });
     L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png", {
-      attribution: '&copy; <a href="https://carto.com/">CARTO</a> | Data: PPAC, Ministry of Petroleum',
-      subdomains: "abcd",
-      maxZoom: 19
+      attribution: '&copy; <a href="https://carto.com/">CARTO</a> | Data: PPAC',
+      subdomains: "abcd", maxZoom: 19
     }).addTo(map);
 
-    // ── Info panel (top-right) ───────────────────────────────────────────
+    // Info panel
     const info = L.control({ position: "topright" });
-    info.onAdd = function () {
-      this._div = L.DomUtil.create("div", "info-panel empty");
-      this.update();
-      return this._div;
-    };
+    info.onAdd = function () { this._div = L.DomUtil.create("div", "info-panel empty"); this.update(); return this._div; };
     info.update = function (props) {
       if (!props) {
         this._div.className = "info-panel empty";
-        this._div.innerHTML = '<h4>LPG Customers</h4><div class="state-name">Hover over a state</div>';
+        this._div.innerHTML = '<h4>Hover over a state</h4><div class="state-name">See LPG connections & Ujjwala breakdown</div>';
         return;
       }
       const name = props.ST_NM;
-      const v = lpgData[name];
+      const total = lpgData[name];
+      const ujj = pmuyData[name] || 0;
+      const ujjLakh = (ujj / 100000).toFixed(2);
+      const ujjPct = total ? ((ujj / 100000) / total * 100).toFixed(1) : 0;
       this._div.className = "info-panel";
       this._div.innerHTML =
-        '<h4>LPG Customers</h4>' +
+        '<h4>' + (showUjjwala ? 'Ujjwala Connections' : 'LPG Customers') + '</h4>' +
         '<div class="state-name">' + name + '</div>' +
-        (v != null
-          ? '<div class="value">' + v.toFixed(2) + ' Lakhs</div><div class="subtitle">' + (v * 100000).toLocaleString("en-IN") + ' customers</div>'
-          : '<div class="value" style="color:#888">No data</div>');
+        (total != null
+          ? '<div class="value">' + total.toFixed(2) + ' Lakhs</div>' +
+            '<div class="detail-row">Total: <strong>' + (total * 100000).toLocaleString("en-IN") + '</strong> households</div>' +
+            '<div class="detail-row">Ujjwala: <strong>' + Number(ujj).toLocaleString("en-IN") + '</strong> (' + ujjPct + '%)</div>' +
+            '<div class="ujjwala-bar"><div class="ujjwala-bar-fill" style="width:' + Math.min(ujjPct, 100) + '%"></div></div>'
+          : '<div class="value" style="color:#555">No data</div>');
     };
     info.addTo(map);
 
-    // ── Legend (bottom-right) ────────────────────────────────────────────
+    // Legend
     const legend = L.control({ position: "bottomright" });
-    legend.onAdd = function () {
-      const div = L.DomUtil.create("div", "legend");
-      div.innerHTML = "<h4>Customers (Lakhs)</h4>";
-      for (let i = 0; i < grades.length; i++) {
-        div.innerHTML +=
-          '<i style="background:' + colors[i] + '"></i> ' +
-          grades[i] + (grades[i + 1] ? "&ndash;" + grades[i + 1] + "<br>" : "+");
+    legend.onAdd = function () { this._div = L.DomUtil.create("div", "legend"); this.updateLegend(); return this._div; };
+    legend.updateLegend = function () {
+      const g = showUjjwala ? gradesUjjwala : grades;
+      const c = showUjjwala ? colorsUjjwala : colorsLPG;
+      const label = showUjjwala ? "Ujjwala (Lakhs)" : "Total LPG (Lakhs)";
+      let html = "<h4>" + label + "</h4>";
+      for (let i = 0; i < g.length; i++) {
+        html += '<i style="background:' + c[i] + '"></i> ' + g[i] + (g[i + 1] ? "&ndash;" + g[i + 1] + "<br>" : "+");
       }
-      return div;
+      this._div.innerHTML = html;
     };
     legend.addTo(map);
 
-    // ── Interaction handlers ─────────────────────────────────────────────
+    // Toggle control
+    const toggle = L.control({ position: "topleft" });
+    toggle.onAdd = function () {
+      const div = L.DomUtil.create("div", "map-toggle");
+      div.innerHTML = '<label><input type="checkbox" id="ujjwala-toggle"> Show Ujjwala (poorest) overlay</label>';
+      div.querySelector("input").addEventListener("change", function () {
+        showUjjwala = this.checked;
+        if (geojsonLayer) geojsonLayer.setStyle(style);
+        legend.updateLegend();
+        info.update();
+      });
+      L.DomEvent.disableClickPropagation(div);
+      return div;
+    };
+    toggle.addTo(map);
+
+    // Interaction
     let geojsonLayer;
-
     function highlightFeature(e) {
-      const layer = e.target;
-      layer.setStyle({ weight: 2.5, color: "#fff", fillOpacity: 0.95 });
-      layer.bringToFront();
-      info.update(layer.feature.properties);
+      e.target.setStyle({ weight: 2.5, color: "#fff", fillOpacity: 0.95 });
+      e.target.bringToFront();
+      info.update(e.target.feature.properties);
     }
-
-    function resetHighlight(e) {
-      geojsonLayer.resetStyle(e.target);
-      info.update();
-    }
-
-    function zoomToFeature(e) {
-      map.fitBounds(e.target.getBounds());
-    }
-
-    function onEachFeature(feature, layer) {
+    function resetHighlight(e) { geojsonLayer.resetStyle(e.target); info.update(); }
+    function zoomToFeature(e) { map.fitBounds(e.target.getBounds()); }
+    function onEachFeature(f, layer) {
       layer.on({ mouseover: highlightFeature, mouseout: resetHighlight, click: zoomToFeature });
     }
 
-    // ── Load GeoJSON ─────────────────────────────────────────────────────
     fetch("india_states_2019.geojson")
       .then(r => r.json())
       .then(data => {
         geojsonLayer = L.geoJson(data, { style, onEachFeature }).addTo(map);
       });
+
+    // ── Draw charts on load ────────────────────────────────────────────
+    window.addEventListener("load", () => { drawBrentChart(); drawImportDonut(); });
+    window.addEventListener("resize", drawBrentChart);
   </script>
 </body>
 </html>
