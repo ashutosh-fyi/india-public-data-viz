@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>India LPG Customers — Choropleth Map</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: #1a1a2e; color: #e0e0e0; }
+    #map { width: 100%; height: calc(100vh - 60px); }
+    header {
+      height: 60px; display: flex; align-items: center; justify-content: center;
+      background: #16213e; border-bottom: 2px solid #0f3460;
+    }
+    header h1 { font-size: 1.2rem; font-weight: 600; color: #e0e0e0; letter-spacing: 0.3px; }
+    header h1 span { color: #f6a623; }
+
+    .info-panel {
+      padding: 10px 14px; background: rgba(22, 33, 62, 0.95); border-radius: 8px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.4); color: #e0e0e0; min-width: 200px;
+      backdrop-filter: blur(4px); border: 1px solid #0f3460;
+    }
+    .info-panel h4 { margin: 0 0 6px; font-size: 0.85rem; color: #999; text-transform: uppercase; letter-spacing: 0.5px; }
+    .info-panel .state-name { font-size: 1.1rem; font-weight: 700; color: #fff; }
+    .info-panel .value { font-size: 1.4rem; font-weight: 700; color: #f6a623; margin: 4px 0; }
+    .info-panel .subtitle { font-size: 0.75rem; color: #888; }
+    .info-panel.empty .state-name { font-weight: 400; color: #aaa; font-size: 0.9rem; }
+
+    .legend {
+      padding: 10px 14px; background: rgba(22, 33, 62, 0.95); border-radius: 8px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.4); border: 1px solid #0f3460;
+      line-height: 1.6; color: #ccc; font-size: 0.8rem;
+    }
+    .legend h4 { margin: 0 0 8px; font-size: 0.75rem; color: #999; text-transform: uppercase; letter-spacing: 0.5px; }
+    .legend i {
+      width: 20px; height: 14px; display: inline-block; margin-right: 6px;
+      border-radius: 2px; vertical-align: middle; border: 1px solid rgba(255,255,255,0.15);
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>State-wise Active Domestic <span>LPG</span> Customers in India &mdash; 1 Apr 2025</h1>
+  </header>
+  <div id="map"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    // ── LPG data (lakhs) from PPAC spreadsheet ───────────────────────────
+    const lpgData = {
+      "Andaman & Nicobar Island": 1.29,
+      "Andhra Pradesh": 159.52,
+      "Arunachal Pradesh": 3.33,
+      "Assam": 91.79,
+      "Bihar": 229.38,
+      "Chandigarh": 3.07,
+      "Chhattisgarh": 63.28,
+      "Dadara & Nagar Havelli": 0.86,
+      "Daman & Diu": 0.86,
+      "NCT of Delhi": 56.90,
+      "Goa": 5.80,
+      "Gujarat": 127.78,
+      "Haryana": 82.60,
+      "Himachal Pradesh": 22.44,
+      "Jammu & Kashmir": 35.42,
+      "Jharkhand": 66.23,
+      "Karnataka": 188.55,
+      "Kerala": 98.13,
+      "Ladakh": 1.00,
+      "Lakshadweep": 0.14,
+      "Madhya Pradesh": 175.04,
+      "Maharashtra": 317.12,
+      "Manipur": 7.05,
+      "Meghalaya": 5.23,
+      "Mizoram": 3.66,
+      "Nagaland": 3.86,
+      "Odisha": 100.56,
+      "Puducherry": 4.12,
+      "Punjab": 96.35,
+      "Rajasthan": 183.81,
+      "Sikkim": 1.89,
+      "Tamil Nadu": 237.57,
+      "Telangana": 126.92,
+      "Tripura": 8.46,
+      "Uttar Pradesh": 483.43,
+      "Uttarakhand": 32.27,
+      "West Bengal": 271.28
+    };
+
+    // ── Color scale ──────────────────────────────────────────────────────
+    const grades = [0, 1, 5, 25, 50, 100, 200, 300, 500];
+    const colors = ["#ffffcc","#ffeda0","#fed976","#feb24c","#fd8d3c","#fc4e2a","#e31a1c","#bd0026","#800026"];
+
+    function getColor(v) {
+      if (v == null) return "#444";
+      for (let i = grades.length - 1; i >= 0; i--) {
+        if (v >= grades[i]) return colors[i];
+      }
+      return colors[0];
+    }
+
+    function style(feature) {
+      const v = lpgData[feature.properties.ST_NM];
+      return {
+        fillColor: getColor(v),
+        weight: 1.2,
+        color: "#222",
+        fillOpacity: 0.85
+      };
+    }
+
+    // ── Map ──────────────────────────────────────────────────────────────
+    const map = L.map("map", {
+      center: [22.5, 82],
+      zoom: 5,
+      minZoom: 4,
+      maxZoom: 8,
+      zoomControl: true,
+      attributionControl: true
+    });
+
+    // Dark tile layer
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png", {
+      attribution: '&copy; <a href="https://carto.com/">CARTO</a> | Data: PPAC, Ministry of Petroleum',
+      subdomains: "abcd",
+      maxZoom: 19
+    }).addTo(map);
+
+    // ── Info panel (top-right) ───────────────────────────────────────────
+    const info = L.control({ position: "topright" });
+    info.onAdd = function () {
+      this._div = L.DomUtil.create("div", "info-panel empty");
+      this.update();
+      return this._div;
+    };
+    info.update = function (props) {
+      if (!props) {
+        this._div.className = "info-panel empty";
+        this._div.innerHTML = '<h4>LPG Customers</h4><div class="state-name">Hover over a state</div>';
+        return;
+      }
+      const name = props.ST_NM;
+      const v = lpgData[name];
+      this._div.className = "info-panel";
+      this._div.innerHTML =
+        '<h4>LPG Customers</h4>' +
+        '<div class="state-name">' + name + '</div>' +
+        (v != null
+          ? '<div class="value">' + v.toFixed(2) + ' Lakhs</div><div class="subtitle">' + (v * 100000).toLocaleString("en-IN") + ' customers</div>'
+          : '<div class="value" style="color:#888">No data</div>');
+    };
+    info.addTo(map);
+
+    // ── Legend (bottom-right) ────────────────────────────────────────────
+    const legend = L.control({ position: "bottomright" });
+    legend.onAdd = function () {
+      const div = L.DomUtil.create("div", "legend");
+      div.innerHTML = "<h4>Customers (Lakhs)</h4>";
+      for (let i = 0; i < grades.length; i++) {
+        div.innerHTML +=
+          '<i style="background:' + colors[i] + '"></i> ' +
+          grades[i] + (grades[i + 1] ? "&ndash;" + grades[i + 1] + "<br>" : "+");
+      }
+      return div;
+    };
+    legend.addTo(map);
+
+    // ── Interaction handlers ─────────────────────────────────────────────
+    let geojsonLayer;
+
+    function highlightFeature(e) {
+      const layer = e.target;
+      layer.setStyle({ weight: 2.5, color: "#fff", fillOpacity: 0.95 });
+      layer.bringToFront();
+      info.update(layer.feature.properties);
+    }
+
+    function resetHighlight(e) {
+      geojsonLayer.resetStyle(e.target);
+      info.update();
+    }
+
+    function zoomToFeature(e) {
+      map.fitBounds(e.target.getBounds());
+    }
+
+    function onEachFeature(feature, layer) {
+      layer.on({ mouseover: highlightFeature, mouseout: resetHighlight, click: zoomToFeature });
+    }
+
+    // ── Load GeoJSON ─────────────────────────────────────────────────────
+    fetch("india_states_2019.geojson")
+      .then(r => r.json())
+      .then(data => {
+        geojsonLayer = L.geoJson(data, { style, onEachFeature }).addTo(map);
+      });
+  </script>
+</body>
+</html>
